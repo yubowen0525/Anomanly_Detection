@@ -13,6 +13,8 @@
 import os
 import time
 from collections import Counter
+from copy import deepcopy
+
 import numpy
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -52,7 +54,7 @@ def classification(directoryPath="Classification", standardizedWay="standard"):
             numpy.random.shuffle(x)
 
             # 异常值处理
-            x_type = numpy.nan_to_num(x, posinf=0, neginf=0)
+            x_type = numpy.nan_to_num(x, posinf=9999, neginf=-9999)
 
             # 标准化
             # if standardizedWay == "standard":
@@ -86,6 +88,7 @@ def constructDataSet(srcPath="Classification", savePath="DeepLearningDateSet", q
         labelName = os.path.basename(file).split(".")[0]
         Labels.append(labelName)
         x = pd.read_csv(file).values
+        x = numpy.concatenate((x, x[:, -2:]), axis=1)
         n, m = x.shape
         if labelName == "BENIGN":
             if index != 0:
@@ -127,34 +130,56 @@ def constructUnsupervisedDataSet(X, Y, savePath, quantify="",
     splitAbnormal = sum(Y == 0)
     # 归一化或标准化
     X_norm, labelName = chooseQuantify(X, quantify)
+    X, X_AN = numpy.split(X_norm, [splitAbnormal], axis=0)
 
     # 合并Y
     Y = Y.reshape((Y.shape[0], 1))
-    X_Y = numpy.concatenate((X_norm, Y), axis=1)
+    Y, Y_AN = numpy.split(Y, [splitAbnormal], axis=0)
 
-    # split normal/abnormal
-    X_Y_N, X_Y_AN = numpy.split(X_Y, [splitAbnormal], axis=0)
+    x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=(1 - percentage) / 2, random_state=42)
+    x_cross, x_test, y_cross, y_test = train_test_split(x_test, y_test, test_size=0.6, random_state=42)
 
-    # 随机
-    numpy.random.shuffle(X_Y_N)
-    numpy.random.shuffle(X_Y_AN)
+    _, X_AN, _, Y_AN = train_test_split(X_AN, Y_AN, test_size=0.6,
+                                        random_state=42)
+    Y_AN = Y_AN.reshape(-1)
+    print(Counter(Y_AN))
+    Y_AN_TEMP = None
+    X_AN_TEMP = None
+    for i in range(1, 15):
+        # 过滤
+        # if i == 8 or i == 9:
+        #     continue
+        index = numpy.where((Y_AN == i))
+        y_index = Y_AN[index]
 
-    # 从abnormal抽取 20%
-    n = X_Y_AN.shape[0]
-    X_Y_AN, _ = numpy.split(X_Y_AN, [int(n * 0.01)], axis=0)
+        # 重修标签
+        if 9 < i < 12:
+            y_index = numpy.where(y_index == i, i - 2, 0)
+        elif i == 12 or i == 13 or i == 14:
+            y_index = numpy.where(y_index == i, 10, 0)
+        elif i == 8 :
+            y_index = numpy.where(y_index == i, 11, 0)
+        elif i == 9:
+            y_index = numpy.where(y_index == i, 12, 0)
+        else:
+            y_index = numpy.where(y_index == i, i, 0)
 
-    # 切分normal abnormal
-    X, Y = numpy.split(X_Y_N, [X_Y_N.shape[1] - 1], axis=1)
-    X_AN, Y_AN = numpy.split(X_Y_AN, [X_Y_AN.shape[1] - 1], axis=1)
-
-    # split normal train/crossValidation/test
-    n, m = X.shape
-    x_train, x_last = numpy.split(X, [int(n * percentage)], axis=0)
-    y_train, y_last = numpy.split(Y, [int(n * percentage)], axis=0)
-
-    n, m = x_last.shape
-    x_cross, x_test = numpy.split(x_last, [int(n * 0.5)], axis=0)
-    y_cross, y_test = numpy.split(y_last, [int(n * 0.5)], axis=0)
+        x_index = X_AN[index]
+        print(y_index.shape, x_index.shape)
+        # 减少过多样本的数量
+        if i == 2 or i == 4 or i == 10:
+            _, x_index, _, y_index = train_test_split(x_index, y_index, test_size=0.2,
+                                                      random_state=42)
+        if Y_AN_TEMP is None:
+            Y_AN_TEMP = y_index
+            X_AN_TEMP = x_index
+        else:
+            X_AN_TEMP = numpy.concatenate((X_AN_TEMP, x_index), axis=0)
+            Y_AN_TEMP = numpy.concatenate((Y_AN_TEMP, y_index), axis=0)
+    X_AN = deepcopy(X_AN_TEMP)
+    Y_AN = deepcopy(Y_AN_TEMP)
+    print(Counter(Y_AN))
+    Y_AN = Y_AN.reshape((Y_AN.shape[0], 1))
 
     # get normal + abnormal test
     x_test_normal_shape = x_test.shape[0]
@@ -255,7 +280,7 @@ def chooseQuantify(X, quantify=""):
         labelName = "dataset-normalize-L2"
         X_norm = normalize(X, "l2")
     elif quantify == "minMax":
-        labelName = "dataset-minMax"
+        labelName = "dataset-minMax-x-80"
         X_norm = minMaxScaler(X)
     elif quantify == "maxAbs":
         labelName = "dataset-maxAbs"
@@ -268,10 +293,11 @@ def chooseQuantify(X, quantify=""):
 
 
 if __name__ == '__main__':
-    # classification("Classification11")
+    # classification("Classification")
 
-    # constructDataSet(quantify="standard", srcPath="Classification11")
-    # constructDataSet(quantify="L1", srcPath="Classification11")
-    # constructDataSet(quantify="L2", srcPath="Classification11")
-    constructDataSet(quantify="minMax", srcPath="Classification11", supervised=False)
-    # constructDataSet(quantify="maxAbs", srcPath="Classification11")
+    # constructDataSet(quantify="standard", srcPath="Classification", supervised=False)
+    # constructDataSet(quantify="L1", srcPath="Classification", supervised=False)
+    # constructDataSet(quantify="L2", srcPath="Classification", supervised=False)
+    constructDataSet(quantify="minMax", srcPath="Classification", supervised=False)
+    # constructDataSet(quantify="dataset-minMax", srcPath="Classification", supervised=False)
+    # constructDataSet(quantify="maxAbs", srcPath="Classification", supervised=False)

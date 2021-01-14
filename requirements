@@ -1,0 +1,6 @@
+tensorflow-gpu==2.3.0
+pandas
+numpy
+sklearn
+seaborn
+tqdm

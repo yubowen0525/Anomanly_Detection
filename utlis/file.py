@@ -20,7 +20,7 @@ def mkdir(path):
     :return:
     """
     if not os.path.exists(path):
-        os.mkdir(path)
+        os.makedirs(path)
 
 
 def getFile(dir_path):

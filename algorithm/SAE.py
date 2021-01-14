@@ -17,16 +17,24 @@ import os
 # from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Reshape, Dropout
 import time
 
-from keras import regularizers
-from keras.models import Model, load_model
-from keras.layers import Dense, Input
+# from keras import regularizers
+# from keras.models import Model, load_model
+# from keras.layers import Dense, Input
 import numpy as np
 from matplotlib import rcParams
-from sklearn.metrics import classification_report, precision_score
+from sklearn.metrics import classification_report, precision_score, f1_score
+# from tensorflow_core.python.keras import Input, Model, regularizers
+# from tensorflow_core.python.keras.layers import Dense
+# from tensorflow_core.python.keras.models import load_model
+from tensorflow.python.keras import Input, Model, regularizers
+from tensorflow.python.keras.layers import Dense
+from tensorflow.python.keras.models import load_model
 
 from config.setting import dataset, modelPath
+from utlis import metrics
 from utlis.file import mkdir
-from utlis.sklearn import describe_loss_and_accuracy, describe_evaluation, distribution, scatterplot, violinplot
+from utlis.sklearn import describe_loss_and_accuracy, describe_evaluation, distribution, scatterplot, violinplot, \
+    saveFile, plot_roc, boxplot
 import seaborn as sns
 import matplotlib.pyplot as plt
 
@@ -74,33 +82,47 @@ class SAE:
         return "SAE-" + self.dataQuantification + "-" + self.time
 
     def createModel(self):
-        input_data = Input(shape=(78,))
+        input_data = Input(shape=(80,))
 
         # 编码层
-        encoded = Dense(32, activation='relu', activity_regularizer=regularizers.l1(10e-5), name='encoded_hidden1')(
-            input_data)
-        # encoded = Dense(256, activation='relu', activity_regularizer=regularizers.l1(10e-5), name='encoded_hidden2')(
+        # encoded = Dense(40, activation='relu', activity_regularizer=regularizers.l1(10e-5), name='encoded_hidden1')(
+        #     input_data)
+        # encoded = Dense(20, activation='relu', activity_regularizer=regularizers.l1(10e-5), name='encoded_hidden2')(
         #     encoded)
-        # encoded = Dense(8, activation='relu', activity_regularizer=regularizers.l1(10e-5),
-        #                 name='encoded_hidden2')(encoded)
-        y = Dense(2, activation='relu', activity_regularizer=regularizers.l1(10e-5),
-                  name='encoded_hidden3')(encoded)
+        # encoded = Dense(10, activation='relu', activity_regularizer=regularizers.l1(10e-5),
+        #                 name='encoded_hidden3')(encoded)
+        encoded = Dense(40, activation='relu', name='encoded_hidden1')(
+            input_data)
+        encoded = Dense(20, activation='relu',  name='encoded_hidden2')(
+            encoded)
+        encoded = Dense(10, activation='relu',
+                        name='encoded_hidden3')(encoded)
+        # y = Dense(2, activation='relu', activity_regularizer=regularizers.l1(10e-5),
+        #           name='encoded_hidden4')(encoded)
+        y = Dense(2, activation='relu',
+                  name='encoded_hidden4')(encoded)
         # LR = Dense(2, activation='softmax', name='LR')(encoder_output)
 
         # 解码层
-        # decoded = Dense(8, activation='relu', name='decoded_hidden1')(y)
-        # decoded = Dense(16, activation='relu', name='decoded_hidden2')(decoded)
-        decoded = Dense(32, activation='relu', name='decoded_hidden1')(y)
-        decoded = Dense(78, activation='tanh', name='decoded_output2')(decoded)
-
+        # decoded = Dense(16, activation='relu', name='decoded_hidden1')(y)
+        decoded = Dense(10, activation='relu', name='decoded_hidden1')(y)
+        decoded = Dense(20, activation='relu', name='decoded_hidden2')(decoded)
+        decoded = Dense(40, activation='relu', name='decoded_output3')(decoded)
+        decoded = Dense(80, activation='sigmoid', name='decoded_output4')(decoded)
         # 构建自编码模型
         self.autoencoder = Model(inputs=input_data, outputs=decoded)
 
         # complile autoencoder 设置自编码的优化参数
-        self.autoencoder.compile(optimizer='adam', loss='mse')
-        # self.autoencoder.compile(optimizer='sgd', loss='mse')
+        # self.autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+        self.autoencoder.compile(optimizer='sgd', loss='mse')
 
-        print(self.autoencoder.summary())
+        stringlist = []
+        self.autoencoder.summary(print_fn=lambda x: stringlist.append(x))
+        # content = self.autoencoder.to_json()
+        content = "{name}\t{time}\n{content}\n".format(name=self.getname(), time=self.time,
+                                                       content="\n".join(stringlist))
+        saveFile(os.path.join(self.modelPath, self.getname(), self.getname() + ".txt"), content)
+        print(content)
 
         # self.encoder = Model(inputs=input_data, outputs=LR)
         # self.encoder.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['categorical_accuracy'])
@@ -111,7 +133,7 @@ class SAE:
         if not self.autoencoder:
             self.createModel()
         # train 让模型更加适应正分类
-        self.autoencoder.fit(self.x_train, self.x_train, epochs=70, batch_size=4096, shuffle=True,
+        self.autoencoder.fit(self.x_train, self.x_train, epochs=50, batch_size=256, shuffle=True,
                              validation_data=(self.x_cross, self.x_cross))
         describe_loss_and_accuracy(self.autoencoder, self.modelPath, self.getname())
 
@@ -121,30 +143,46 @@ class SAE:
     def anomalyScore(self, model=None):
         pred = self.predict()
         # 计算 pred 与 测试集的 欧几里得距离
-        score = np.linalg.norm(pred - self.x_test, axis=1, ord=np.inf)
+        score = np.linalg.norm(pred - self.x_test, axis=1, ord=2)
+        # normed to [0,1)
+        score = (score - np.amin(score)) / (np.amax(score) -
+                                                        np.amin(score))
+
         distribution(score, self.modelPath, self.getname())
         violinplot(score, self.y_test, self.modelPath, self.getname())
+        boxplot(score, self.y_test, os.path.join(modelPath), self.getname())
+
+        metrics.MultiClassROCAUC(self.y_test, score, show=True,
+                                 path=os.path.join(modelPath, self.getname(), self.getname()))
+
+        y_test_1 = np.where(self.y_test > 0.5, 1, 0)
+        _ = metrics.roc_auc(y_test_1, score, show=True,
+                            path=os.path.join(modelPath, self.getname(), self.getname()))
+        # Average Precision
+        _ = metrics.pre_rec_curve(y_test_1, score, show=True,
+                                  path=os.path.join(modelPath, self.getname(), self.getname()))
+
         index = sum(self.y_test == 0)
         score_sort = np.sort(score)
         # 取出数据分布分界线中心1万的200个测试
         test = score_sort[(index - 1000): (1000 + index): 100]
         # self.evaluate(score, 0.60)
-        # f1Socre = []
-        # for Threshold in test:
-        #     # print("min:", score.min(), "max:", score.max(), "mean:", score.mean(), "Threshold:", Threshold)
-        #     y_pred = np.where(score > Threshold, 1, 0)
-        #     self.y_test = np.where(self.y_test > 0.5, 1, 0)
-        #     f1_score1 = f1_score(self.y_test, y_pred, average='macro')
-        #     bisect.insort(f1Socre, (f1_score1, Threshold))
-
-        # f1Socre = f1Socre[-2:]
+        f1Socre = []
         for Threshold in test:
+            # print("min:", score.min(), "max:", score.max(), "mean:", score.mean(), "Threshold:", Threshold)
+            y_pred = np.where(score > Threshold, 1, 0)
+            self.y_test = np.where(self.y_test > 0.5, 1, 0)
+            f1_score1 = f1_score(self.y_test, y_pred, average='macro')
+            bisect.insort(f1Socre, (f1_score1, Threshold))
+
+        f1Socre = f1Socre[-2:]
+        for _, Threshold in f1Socre:
             print("min:", score.min(), "max:", score.max(), "mean:", score.mean(), "Threshold:", Threshold)
             self.evaluate(score, Threshold)
 
     def evaluate(self, score, Threshold):
         y_pred = np.where(score > Threshold, 1, 0)
-        self.y_test = np.where(self.y_test > 0.5, 1, 0)
+        plot_roc(self.y_test, y_pred, self.modelPath, self.getname())
         describe_evaluation(self.y_test, y_pred, self.LABELS, self.modelPath, self.getname())
 
     def predict(self):
@@ -155,13 +193,14 @@ class SAE:
         self.autoencoder.save(os.path.join(self.modelPath, self.getname(), self.getname() + ".h5"))
 
     def loadModel(self, model):
-        model = os.path.join(self.modelPath, model)
-        if model and os.path.exists(model):
-            self.autoencoder = load_model(model)
+        model = os.path.join(self.modelPath, model, model)
+        # if model and os.path.exists(model):
+        self.autoencoder = load_model(model+'.h5')
 
 
 def main():
-    sae = SAE("dataset-minMax", "SAE-minMax-2020-11-23-19-02-47\\SAE-minMax-2020-11-23-19-02-47.h5")
+    # sae = SAE("dataset-minMax-x-80-unsupervised", "SAE-minMax-x-80-unsupervised-2021-01-02-16-31-05")
+    sae = SAE("dataset-minMax-x-80-unsupervised", "SAE-minMax-x-80-unsupervised-2021-01-03-00-09-06")
     # sae.fit()
     # sae.save()
     sae.anomalyScore()
