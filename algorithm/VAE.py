@@ -24,13 +24,13 @@ import tensorflow.keras as keras
 # from tensorflow_core.python.keras.models import load_model
 from tensorflow.python.keras.models import load_model
 
-from utlis import metrics
-from utlis.file import mkdir
+from utils import metrics
+from utils.file import mkdir
 from config.setting import modelPath, dataset
-from utlis.metrics import roc_auc, pre_rec_curve
-from utlis.sklearn import describe_evaluation, distribution, violinplot, describe_loss_and_accuracy, plot_roc, \
+from utils.metrics import roc_auc, pre_rec_curve
+from utils.sklearn import describe_evaluation, distribution, violinplot, describe_loss_and_accuracy, plot_roc, \
     minMaxScaler, boxplot, describe_loss_VAE
-from utlis.time import getTime
+from utils.time import getTime
 
 latent_dim = 2
 
@@ -128,6 +128,11 @@ class VAE:
     batch_size = 256
 
     def __init__(self, dataset, model=None):
+        """
+        初始化模型
+        :param dataset: 从dataset/DeepLearningDateSet 拿数据集
+        :param model: 从self.modelPath拿模型, 加载模型
+        """
         mkdir(self.modelPath)
         self.loadData(dataset)
         self.autoencoder = _VAE(self.buildEncoder(), self.buildDecoder())
@@ -201,53 +206,51 @@ class VAE:
         # 用新的模型进行训练评估
         # self.encoder.fit(self.x_train, self.y_train, epochs=20, batch_size=256, shuffle=True)
 
-    def plot_loss(self):
-        file = "C:\\Users\\ybw\\Desktop\\text.txt"
-        with open(file, encoding='utf-8', mode='r') as f:
-            # for line in f.readlines():
-            content = f.read()
-            loss = re.findall(r"- loss: (.*?) ", content)
-            val_loss = re.findall(r"- val_loss: (.*?)\n", content)
-            print()
-            describe_loss_VAE(np.array(loss), np.array(val_loss), "C:\\Users\\ybw\\Desktop\\", "text")
+    # def plot_loss(self):
+    #     file = "C:\\Users\\ybw\\Desktop\\text.txt"
+    #     with open(file, encoding='utf-8', mode='rw') as f:
+    #         # for line in f.readlines():
+    #         content = f.read()
+    #         loss = re.findall(r"- loss: (.*?) ", content)
+    #         val_loss = re.findall(r"- val_loss: (.*?)\n", content)
+    #         print()
+    #         describe_loss_VAE(np.array(loss), np.array(val_loss), "C:\\Users\\ybw\\Desktop\\", "text")
 
     def anomalyScore(self, model=None):
         pred = self.predict()
         self.x_test = self.x_test.reshape(self.x_test.shape[0], -1)
         pred = pred.reshape(pred.shape[0], -1)
-        # 计算 pred 与 测试集的 欧几里得距离
+        # 计算 self.pred 与 self.test 的 误差
         score = np.linalg.norm(pred - self.x_test, axis=1, ord=2)
 
         # normed to [0,1)
         score = (score - np.amin(score)) / (np.amax(score) -
                                             np.amin(score))
-        self.plot_loss()
+        # self.plot_loss()
+        # 画误差分布图
         distribution(score, self.modelPath, self.getname())
+        # 画误差小提琴图
         violinplot(score, self.y_test, self.modelPath, self.getname())
+        # 画误差箱线图
         boxplot(score, self.y_test, self.modelPath, self.getname())
+        # 画每个恶意攻击分类的ROC、AUC图
         metrics.MultiClassROCAUC(self.y_test, score, show=True,
                                  path=os.path.join(self.modelPath, self.getname(), self.getname()))
 
+        # 画总体的ROC、AUC图
         self.y_test = np.where(self.y_test > 0.5, 1, 0)
         _ = roc_auc(self.y_test, score, show=True, path=os.path.join(self.modelPath, self.getname(), self.getname()))
         _ = pre_rec_curve(self.y_test, score, show=True,
                           path=os.path.join(self.modelPath, self.getname(), self.getname()))
-        # distribution(score, self.modelPath, self.getname())
-        # violinplot(score, self.y_test, self.modelPath, self.getname())
-        # score_1 = np.linalg.norm(pred - self.x_test, axis=1, ord=1)
-        # distribution(score_1, self.modelPath, self.getname())
-        # violinplot(score_1, seself.modelPathlf.y_test, self.modelPath, self.getname())
-        #
-        score_inf = np.linalg.norm(pred - self.x_test, axis=1, ord=np.inf)
-        distribution(score_inf, self.modelPath, self.getname())
-        violinplot(score_inf, self.y_test, self.modelPath, self.getname())
 
+        # 计算混淆矩阵，precision, recall, f1-score
         index = sum(self.y_test == 0)
         score_sort = np.sort(score)
-        # 取出数据分布分界线中心1万的200个测试
         test = score_sort[(index - 1000): (1000 + index): 100]
         # self.evaluate(score, 0.60)
         f1Socre = []
+        # index 就是异常个数与正常个数的分界点
+        # 从index 附近找出2000个阈值，看哪个阈值的f1-score分值最高
         for Threshold in test:
             # print("min:", score.min(), "max:", score.max(), "mean:", score.mean(), "Threshold:", Threshold)
             y_pred = np.where(score < 0, 99, score)
@@ -313,30 +316,32 @@ class VAE:
 
 
 def main():
-    vae = VAE("dataset-minMax-x-80-unsupervised")
-    vae.fit()
-    vae.save()
+    path = "VAE-minMax-x-80-unsupervised-2021-01-03-14-37-35"
+    vae = VAE("dataset-minMax-unsupervised", model=path)
+    # vae = VAE("dataset-minMax-unsupervised")
+    # vae.fit()
+    # vae.save()
     vae.anomalyScore()
     # vae.is_outlier()
 
 
-def iforest_predict(train, test, test_label):
-    from sklearn.ensemble import IsolationForest
-    iforest = IsolationForest(max_samples='auto',
-                              behaviour="new", contamination=0.01)
-
-    iforest.fit(train)
-    iforest_predict_label = iforest.predict(test)
-    # plot_confusion_matrix(test_label, iforest_predict_label, ['anomaly','normal'],'iforest Confusion-Matrix')
-
-
-def lof_predict(train, test, test_label):
-    from sklearn.neighbors import LocalOutlierFactor
-    lof = LocalOutlierFactor(novelty=True, contamination=0.01)
-    lof.fit(train)
-    lof_predict_label = lof.predict(test)
-    # plot_confusion_matrix(test_label, lof_predict_label, ['anomaly','normal'],'LOF Confusion-Matrix')
-
+# def iforest_predict(train, test, test_label):
+#     from sklearn.ensemble import IsolationForest
+#     iforest = IsolationForest(max_samples='auto',
+#                               behaviour="new", contamination=0.01)
+#
+#     iforest.fit(train)
+#     iforest_predict_label = iforest.predict(test)
+#     # plot_confusion_matrix(test_label, iforest_predict_label, ['anomaly','normal'],'iforest Confusion-Matrix')
+#
+#
+# def lof_predict(train, test, test_label):
+#     from sklearn.neighbors import LocalOutlierFactor
+#     lof = LocalOutlierFactor(novelty=True, contamination=0.01)
+#     lof.fit(train)
+#     lof_predict_label = lof.predict(test)
+#     # plot_confusion_matrix(test_label, lof_predict_label, ['anomaly','normal'],'LOF Confusion-Matrix')
+#
 
 if __name__ == '__main__':
     main()

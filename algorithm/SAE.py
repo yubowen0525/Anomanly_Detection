@@ -31,14 +31,14 @@ from tensorflow.python.keras.layers import Dense
 from tensorflow.python.keras.models import load_model
 
 from config.setting import dataset, modelPath
-from utlis import metrics
-from utlis.file import mkdir
-from utlis.sklearn import describe_loss_and_accuracy, describe_evaluation, distribution, scatterplot, violinplot, \
+from utils import metrics
+from utils.file import mkdir
+from utils.sklearn import describe_loss_and_accuracy, describe_evaluation, distribution, scatterplot, violinplot, \
     saveFile, plot_roc, boxplot
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from utlis.time import getTime
+from utils.time import getTime
 
 
 class SAE:
@@ -85,18 +85,18 @@ class SAE:
         input_data = Input(shape=(80,))
 
         # 编码层
-        # encoded = Dense(40, activation='relu', activity_regularizer=regularizers.l1(10e-5), name='encoded_hidden1')(
-        #     input_data)
-        # encoded = Dense(20, activation='relu', activity_regularizer=regularizers.l1(10e-5), name='encoded_hidden2')(
-        #     encoded)
-        # encoded = Dense(10, activation='relu', activity_regularizer=regularizers.l1(10e-5),
-        #                 name='encoded_hidden3')(encoded)
-        encoded = Dense(40, activation='relu', name='encoded_hidden1')(
+        encoded = Dense(40, activation='relu', activity_regularizer=regularizers.l1(10e-5), name='encoded_hidden1')(
             input_data)
-        encoded = Dense(20, activation='relu',  name='encoded_hidden2')(
+        encoded = Dense(20, activation='relu', activity_regularizer=regularizers.l1(10e-5), name='encoded_hidden2')(
             encoded)
-        encoded = Dense(10, activation='relu',
+        encoded = Dense(10, activation='relu', activity_regularizer=regularizers.l1(10e-5),
                         name='encoded_hidden3')(encoded)
+        # encoded = Dense(40, activation='relu', name='encoded_hidden1')(
+        #     input_data)
+        # encoded = Dense(20, activation='relu',  name='encoded_hidden2')(
+        #     encoded)
+        # encoded = Dense(10, activation='relu',
+        #                 name='encoded_hidden3')(encoded)
         # y = Dense(2, activation='relu', activity_regularizer=regularizers.l1(10e-5),
         #           name='encoded_hidden4')(encoded)
         y = Dense(2, activation='relu',
@@ -113,8 +113,8 @@ class SAE:
         self.autoencoder = Model(inputs=input_data, outputs=decoded)
 
         # complile autoencoder 设置自编码的优化参数
-        # self.autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
-        self.autoencoder.compile(optimizer='sgd', loss='mse')
+        self.autoencoder.compile(optimizer='adadelta', loss='binary_crossentropy')
+        # self.autoencoder.compile(optimizer='sgd', loss='mse')
 
         stringlist = []
         self.autoencoder.summary(print_fn=lambda x: stringlist.append(x))
@@ -133,7 +133,7 @@ class SAE:
         if not self.autoencoder:
             self.createModel()
         # train 让模型更加适应正分类
-        self.autoencoder.fit(self.x_train, self.x_train, epochs=50, batch_size=256, shuffle=True,
+        self.autoencoder.fit(self.x_train, self.x_train, epochs=10, batch_size=256, shuffle=True,
                              validation_data=(self.x_cross, self.x_cross))
         describe_loss_and_accuracy(self.autoencoder, self.modelPath, self.getname())
 
@@ -146,21 +146,21 @@ class SAE:
         score = np.linalg.norm(pred - self.x_test, axis=1, ord=2)
         # normed to [0,1)
         score = (score - np.amin(score)) / (np.amax(score) -
-                                                        np.amin(score))
+                                            np.amin(score))
 
         distribution(score, self.modelPath, self.getname())
         violinplot(score, self.y_test, self.modelPath, self.getname())
-        boxplot(score, self.y_test, os.path.join(modelPath), self.getname())
+        boxplot(score, self.y_test, os.path.join(self.modelPath), self.getname())
 
         metrics.MultiClassROCAUC(self.y_test, score, show=True,
-                                 path=os.path.join(modelPath, self.getname(), self.getname()))
+                                 path=os.path.join(self.modelPath, self.getname(), self.getname()))
 
         y_test_1 = np.where(self.y_test > 0.5, 1, 0)
         _ = metrics.roc_auc(y_test_1, score, show=True,
-                            path=os.path.join(modelPath, self.getname(), self.getname()))
+                            path=os.path.join(self.modelPath, self.getname(), self.getname()))
         # Average Precision
         _ = metrics.pre_rec_curve(y_test_1, score, show=True,
-                                  path=os.path.join(modelPath, self.getname(), self.getname()))
+                                  path=os.path.join(self.modelPath, self.getname(), self.getname()))
 
         index = sum(self.y_test == 0)
         score_sort = np.sort(score)
@@ -195,12 +195,16 @@ class SAE:
     def loadModel(self, model):
         model = os.path.join(self.modelPath, model, model)
         # if model and os.path.exists(model):
-        self.autoencoder = load_model(model+'.h5')
+        self.autoencoder = load_model(model + '.h5')
 
 
 def main():
-    # sae = SAE("dataset-minMax-x-80-unsupervised", "SAE-minMax-x-80-unsupervised-2021-01-02-16-31-05")
-    sae = SAE("dataset-minMax-x-80-unsupervised", "SAE-minMax-x-80-unsupervised-2021-01-03-00-09-06")
+    # sae = SAE("dataset-minMax-x-80-unsupervised")
+    # sae.fit()
+    # sae.save()
+    # sae.anomalyScore()
+    # 读取历史模型，再进行训练或验证
+    sae = SAE("dataset-minMax-x-80-unsupervised", "SAE-minMax-x-80-unsupervised-2021-03-31-20-11-18")
     # sae.fit()
     # sae.save()
     sae.anomalyScore()

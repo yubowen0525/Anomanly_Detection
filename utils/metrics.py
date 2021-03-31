@@ -11,7 +11,7 @@ import matplotlib
 
 matplotlib.use('AGG')
 import matplotlib.pyplot as plt
-from utlis.file import mkdir
+from utils.file import mkdir
 
 
 def roc_auc(labels, scores, pos_label=1, show=False, path=None):

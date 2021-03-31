@@ -20,8 +20,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, roc_curve, auc
 
-from utlis.file import mkdir
-from utlis.time import getTime
+from utils.file import mkdir
+from utils.time import getTime
 import uuid
 
 
@@ -138,9 +138,7 @@ def describe_evaluation(y_true, y_pred, LABELS, savePath=None, name=None):
     # RANDOM_SEED = 42
     plt.figure(figsize=(12, 10))
     sns.heatmap(conf_matrix, xticklabels=LABELS, yticklabels=LABELS, annot=True, fmt="d", cmap='GnBu')
-    plt.title("Traffic Classification Confusion Matrix (SAE method)")
-    plt.ylabel('Application traffic samples')
-    plt.xlabel('Application traffic samples')
+    # plt.title("Traffic Classification Confusion Matrix (SAE method)")
     time = getTime()
     picturSave(savePath, name)
     plt.show()

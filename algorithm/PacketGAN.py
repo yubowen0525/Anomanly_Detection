@@ -10,21 +10,23 @@
                    2020/11/28:
 -------------------------------------------------
 """
+import bisect
 import os
 import time
 import numpy as np
+from sklearn.metrics import f1_score
 from tqdm.auto import tqdm
 import tensorflow as tf
 from tensorflow.keras import layers
-import utlis.metrics as metrics
+import utils.metrics as metrics
 import logging as log
 
 from config.setting import modelPath
 
 # logging 模块修改
-from utlis.file import mkdir
-from utlis.sklearn import distribution, violinplot, boxplot
-from utlis.time import getTime
+from utils.file import mkdir
+from utils.sklearn import distribution, violinplot, boxplot, plot_roc, describe_evaluation
+from utils.time import getTime
 
 gpu = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_memory_growth(gpu[0], True)
@@ -43,7 +45,7 @@ class Option:
         self.batch_size = 300
         self.isize = 80  # input size
         self.ckpt_dir = "ckpt"
-        self.nz = 6  # latent dims
+        self.nz = 2  # latent dims
         self.nc = 1  # input channels
         self.ndf = 64  # number of discriminator's filters
         self.ngf = 64  # number of generator's filters
@@ -442,6 +444,7 @@ class GANRunner:
 
 
 class GANomaly(GANRunner):
+    LABELS = ["BENIGN", "MALIGNANT"]
 
     def __init__(self,
                  opt,
@@ -561,6 +564,30 @@ class GANomaly(GANRunner):
         _ = metrics.pre_rec_curve(gt_labels, an_scores, show=True,
                                   path=os.path.join(modelPath, self.get_name(), self.get_name()))
 
+        index = sum(gt_labels == 0)
+        score_sort = np.sort(an_scores)
+        # 取出数据分布分界线中心1万的200个测试
+        test = score_sort[(index - 10000): (10000 + index): 100]
+        # self.evaluate(score, 0.60)
+        f1Socre = []
+        for Threshold in test:
+            # print("min:", score.min(), "max:", score.max(), "mean:", score.mean(), "Threshold:", Threshold)
+            y_pred = np.where(an_scores > Threshold, 1, 0)
+            self.y_test = gt_labels
+            f1_score1 = f1_score(self.y_test, y_pred, average='macro')
+            bisect.insort(f1Socre, (f1_score1, Threshold))
+
+        f1Socre = f1Socre[-2:]
+        for _, Threshold in f1Socre:
+            print("min:", an_scores.min(), "max:", an_scores.max(), "mean:", an_scores.mean(), "Threshold:", Threshold)
+            self.evaluate_(an_scores, Threshold)
+
+    def evaluate_(self, score, Threshold):
+        y_pred = np.where(score > Threshold, 1, 0)
+        self.y_test = np.where(self.y_test > 0.5, 1, 0)
+        describe_evaluation(self.y_test, y_pred, self.LABELS,
+                            savePath=os.path.join(modelPath, self.get_name(), self.get_name()), name=self.get_name())
+
     @tf.function
     def _train_step_autograph(self, x):
         """ Autograph enabled by tf.function could speedup more than 6x than eager mode.
@@ -659,11 +686,18 @@ def loadData(name="dataset"):
 
 
 def main():
-    path = os.path.join(modelPath, "2020-12-16-20-26-31_latent6_epoch50--1", "ckpt") + '/'
-    train_dataset, cross_dataset, test_dataset = loadData("dataset-minMax-x-80-unsupervised")
-    ganomaly = GANomaly(opt, train_dataset, valid_dataset=None, test_dataset=test_dataset, save_path=path)
-    ganomaly.load_best()
+    # 模型训练
+    # train_dataset, cross_dataset, test_dataset = loadData("dataset-minMax-unsupervised")
+    # ganomaly = GANomaly(opt, train_dataset, valid_dataset=None, test_dataset=test_dataset)
     # ganomaly.fit(opt.niter)
+    # ganomaly.evaluate_best(test_dataset)
+
+    # 读取历史模型，再进行训练或验证
+    path = os.path.join(modelPath, "2020-12-20-08-51-04_latent2_epoch200", "ckpt") + '/'
+    train_dataset, cross_dataset, test_dataset = loadData("dataset-minMax-unsupervised")
+    ganomaly = GANomaly(opt, train_dataset, valid_dataset=None, test_dataset=test_dataset, save_path=path)
+    # ganomaly.fit(opt.niter)
+    ganomaly.load_best()
     ganomaly.evaluate_best(test_dataset)
     pass
 

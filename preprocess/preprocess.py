@@ -17,10 +17,11 @@ from copy import deepcopy
 
 import numpy
 import pandas as pd
+import seaborn
 from sklearn.model_selection import train_test_split
 
-from utlis.file import getFile, mkdir
-from utlis.sklearn import random, standardScaler, normalize, minMaxScaler, maxAbsScaler
+from utils.file import getFile, mkdir
+from utils.sklearn import random, standardScaler, normalize, minMaxScaler, maxAbsScaler
 from multiprocessing import Pool
 from config.setting import dataset
 
@@ -70,10 +71,10 @@ def classification(directoryPath="Classification", standardizedWay="standard"):
             else:
                 labels[name] += data.shape[0]
             data.to_csv(path, mode='a', encoding='utf-8', header=False, index=False)
-    path = os.path.join(workPath, "labels.csv")
+    # path = os.path.join(dataset, "labels.csv")
     print(labels)
-    labels = pd.DataFrame.from_dict(labels, orient='index')
-    labels.to_csv(path, encoding='utf-8', index=False)
+    # labels = pd.DataFrame.from_dict(labels, orient='index')
+    # labels.to_csv(path, encoding='utf-8', index=False)
 
 
 def constructDataSet(srcPath="Classification", savePath="DeepLearningDateSet", quantify="", supervised=True):
@@ -104,14 +105,15 @@ def constructDataSet(srcPath="Classification", savePath="DeepLearningDateSet", q
             X = x
             Y = y
             continue
-
+        print("X.shape:", X.shape, "x.shape:", x.shape)
+        print("Y.shape:", Y.shape, "y.shape:", y.shape)
         X = numpy.concatenate((X, x), axis=0)
         Y = numpy.concatenate((Y, y), axis=0)
 
     if not supervised:
         constructUnsupervisedDataSet(X, Y, savePath, quantify)
-    else:
-        constructSupervisedDataSet(X, Y, savePath, quantify, Labels)
+    # else:
+    #     constructSupervisedDataSet(X, Y, savePath, quantify, Labels)
 
 
 def constructUnsupervisedDataSet(X, Y, savePath, quantify="",
@@ -127,6 +129,11 @@ def constructUnsupervisedDataSet(X, Y, savePath, quantify="",
     """
     LABLES = []
     AllN = X.shape[0]
+    p_list = 0
+    for i in range(80):
+        count = numpy.sum(X[:, i] == 0)
+        p_list += count
+    test = p_list / X.shape[0]
     splitAbnormal = sum(Y == 0)
     # 归一化或标准化
     X_norm, labelName = chooseQuantify(X, quantify)
@@ -157,7 +164,7 @@ def constructUnsupervisedDataSet(X, Y, savePath, quantify="",
             y_index = numpy.where(y_index == i, i - 2, 0)
         elif i == 12 or i == 13 or i == 14:
             y_index = numpy.where(y_index == i, 10, 0)
-        elif i == 8 :
+        elif i == 8:
             y_index = numpy.where(y_index == i, 11, 0)
         elif i == 9:
             y_index = numpy.where(y_index == i, 12, 0)
@@ -221,51 +228,51 @@ def constructUnsupervisedDataSet(X, Y, savePath, quantify="",
     p.to_csv(labels_path, mode='a+', index=None)
 
 
-def constructSupervisedDataSet(X, Y, savePath, quantify="", Labels=None,
-                               percentage=0.6):
-    """
-    train , cross ,test  always have abnormal
-    :param Labels:
-    :param X:
-    :param Y:
-    :param quantify:
-    :param savePath:
-    :param percentage:
-    :return:
-    """
-    LABLES = []
-    X_norm, labelName = chooseQuantify(X, quantify)
-    x_train, x_test, y_train, y_test = train_test_split(X_norm, Y, test_size=(1 - percentage) / 2, random_state=42)
-    x_train, x_cross, y_train, y_cross = train_test_split(x_train, y_train, test_size=(1 - percentage) / 2,
-                                                          random_state=42)
-
-    labelName = labelName + "-supervised"
-    print("%s num:%d, train num:%d, crossValidation num:%d, test num:%d" % (
-        labelName, X.shape[0], x_train.shape[0], x_cross.shape[0], x_test.shape[0]))
-    y_c = Counter(Y)
-    y_train_c = Counter(y_train)
-    y_cross_c = Counter(y_cross)
-    y_test_c = Counter(y_test)
-    for index, label in enumerate(Labels):
-        LABLES.append(
-            {"name": label,
-             "num": y_c.get(index),
-             "train_num": y_train_c.get(index),
-             "cross_num": y_cross_c.get(index),
-             "test_num": y_test_c.get(index),
-             }
-        )
-
-    # 保存成npz文件
-    npz_path = os.path.join(savePath, labelName) + ".npz"
-    if not os.path.exists(npz_path):
-        numpy.savez(npz_path, x_train=x_train, y_train=y_train, x_cross=x_cross, y_cross=y_cross, x_test=x_test,
-                    y_test=y_test)
-
-    labels_path = savePath + "\\" + labelName + "-labels.csv"
-    p = pd.DataFrame(LABLES, dtype=int)
-    p.to_csv(labels_path, mode='w', index=None)
-    pass
+# def constructSupervisedDataSet(X, Y, savePath, quantify="", Labels=None,
+#                                percentage=0.6):
+#     """
+#     train , cross ,test  always have abnormal
+#     :param Labels:
+#     :param X:
+#     :param Y:
+#     :param quantify:
+#     :param savePath:
+#     :param percentage:
+#     :return:
+#     """
+#     LABLES = []
+#     X_norm, labelName = chooseQuantify(X, quantify)
+#     x_train, x_test, y_train, y_test = train_test_split(X_norm, Y, test_size=(1 - percentage) / 2, random_state=42)
+#     x_train, x_cross, y_train, y_cross = train_test_split(x_train, y_train, test_size=(1 - percentage) / 2,
+#                                                           random_state=42)
+#
+#     labelName = labelName + "-supervised"
+#     print("%s num:%d, train num:%d, crossValidation num:%d, test num:%d" % (
+#         labelName, X.shape[0], x_train.shape[0], x_cross.shape[0], x_test.shape[0]))
+#     y_c = Counter(Y)
+#     y_train_c = Counter(y_train)
+#     y_cross_c = Counter(y_cross)
+#     y_test_c = Counter(y_test)
+#     for index, label in enumerate(Labels):
+#         LABLES.append(
+#             {"name": label,
+#              "num": y_c.get(index),
+#              "train_num": y_train_c.get(index),
+#              "cross_num": y_cross_c.get(index),
+#              "test_num": y_test_c.get(index),
+#              }
+#         )
+#
+#     # 保存成npz文件
+#     npz_path = os.path.join(savePath, labelName) + ".npz"
+#     if not os.path.exists(npz_path):
+#         numpy.savez(npz_path, x_train=x_train, y_train=y_train, x_cross=x_cross, y_cross=y_cross, x_test=x_test,
+#                     y_test=y_test)
+#
+#     labels_path = savePath + "\\" + labelName + "-labels.csv"
+#     p = pd.DataFrame(LABLES, dtype=int)
+#     p.to_csv(labels_path, mode='w', index=None)
+#     pass
 
 
 def chooseQuantify(X, quantify=""):
@@ -280,7 +287,7 @@ def chooseQuantify(X, quantify=""):
         labelName = "dataset-normalize-L2"
         X_norm = normalize(X, "l2")
     elif quantify == "minMax":
-        labelName = "dataset-minMax-x-80"
+        labelName = "dataset-minMax"
         X_norm = minMaxScaler(X)
     elif quantify == "maxAbs":
         labelName = "dataset-maxAbs"
@@ -293,7 +300,7 @@ def chooseQuantify(X, quantify=""):
 
 
 if __name__ == '__main__':
-    # classification("Classification")
+    classification("Classification")
 
     # constructDataSet(quantify="standard", srcPath="Classification", supervised=False)
     # constructDataSet(quantify="L1", srcPath="Classification", supervised=False)
